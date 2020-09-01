@@ -1,0 +1,37 @@
+diff --git a/vif_plug_ovs/ovs.py b/vif_plug_ovs/ovs.py
+--- a/vif_plug_ovs/ovs.py       2020-04-21 06:22:20.000000000 +0000
++++ b/vif_plug_ovs/ovs.py       2020-08-17 12:08:27.431540959 +0000
+@@ -273,7 +273,19 @@
+             kwargs = {'interface_type': constants.OVS_DPDK_INTERFACE_TYPE,
+                       'pf_pci': pf_pci,
+                       'vf_num': vf_num}
++
+         self._create_vif_port(*args, **kwargs)
++        if datapath != constants.OVS_DATAPATH_SYSTEM:
++            try:
++                pf_ifname = linux_net.get_ifname_by_pci_address(
++                    pci_slot, pf_interface=True, switchdev=True)
++                linux_net.set_vf_mac_address(
++                    pf_ifname, int(vf_num), vif.address)
++            except exception.PciDeviceNotFoundById:
++                # @TODO(hamdyk): set MAC address for non-bifurcated driver.
++                # could not find net device for the PCI, skipped setting
++                # MAC address.
++                pass
+
+     def plug(self, vif, instance_info):
+         if not hasattr(vif, "port_profile"):
+diff --git a/vif_plug_ovs/linux_net.py b/vif_plug_ovs/linux_net.py
+--- a/vif_plug_ovs/linux_net.py 2020-04-21 06:22:21.000000000 +0000
++++ a/vif_plug_ovs/linux_net.py 2020-08-17 12:11:20.227716913 +0000
+@@ -168,6 +168,10 @@
+     ip_lib.set(interface_name, state=port_state, check_exit_code=[0, 2, 254])
+
+
++@privsep.vif_plug.entrypoint
++def set_vf_mac_address(pf_ifname, vf_num, address):
++    processutils.execute("ip", "link", "set", pf_ifname, "vf", vf_num, "mac", address)
++
+ def _parse_vf_number(phys_port_name):
+     """Parses phys_port_name and returns VF number or None.
+

@@ -1,0 +1,12 @@
+--- a/neutron/plugins/ml2/drivers/openvswitch/mech_driver/mech_openvswitch.py	2020-08-31 09:29:08.411480565 +0000
++++ b/neutron/plugins/ml2/drivers/openvswitch/mech_driver/mech_openvswitch.py	2020-08-31 09:35:03.334535085 +0000
+@@ -81,7 +81,8 @@
+         self.supported_vnic_types = self.blacklist_supported_vnic_types(
+             vnic_types=[portbindings.VNIC_NORMAL,
+                         portbindings.VNIC_DIRECT,
+-                        portbindings.VNIC_SMARTNIC],
++                        portbindings.VNIC_SMARTNIC,
++                        portbindings.VNIC_VIRTIO_FORWARDER],
+             blacklist=cfg.CONF.OVS_DRIVER.vnic_type_blacklist
+         )
+         LOG.info("%s's supported_vnic_types: %s",

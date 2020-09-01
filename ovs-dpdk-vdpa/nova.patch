@@ -1,0 +1,12 @@
+--- a/nova/network/os_vif_util.py	2020-08-30 06:35:26.351449032 +0000
++++ b/nova/network/os_vif_util.py	2020-08-31 09:20:41.916300779 +0000
+@@ -421,6 +421,9 @@
+         if vif["network"]["bridge"] is not None:
+             obj.bridge_name = vif["network"]["bridge"]
+         _set_vhostuser_settings(vif, obj)
++        vnic_type = vif.get('vnic_type', model.VNIC_TYPE_NORMAL)
++        if vnic_type == model.VNIC_TYPE_VIRTIO_FORWARDER:
++            _set_representor_datapath_offload_settings(vif, obj)
+         return obj
+     elif vif['details'].get(model.VIF_DETAILS_VHOSTUSER_VROUTER_PLUG, False):
+         obj = _get_vif_instance(vif, objects.vif.VIFVHostUser,
