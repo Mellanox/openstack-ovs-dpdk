@@ -1,7 +1,7 @@
 diff --git a/vif_plug_ovs/ovs.py b/vif_plug_ovs/ovs.py
 --- a/vif_plug_ovs/ovs.py       2020-04-21 06:22:20.000000000 +0000
 +++ b/vif_plug_ovs/ovs.py       2020-08-17 12:08:27.431540959 +0000
-@@ -273,7 +273,19 @@
+@@ -273,7 +273,18 @@
              kwargs = {'interface_type': constants.OVS_DPDK_INTERFACE_TYPE,
                        'pf_pci': pf_pci,
                        'vf_num': vf_num}
@@ -14,7 +14,6 @@ diff --git a/vif_plug_ovs/ovs.py b/vif_plug_ovs/ovs.py
 +                linux_net.set_vf_mac_address(
 +                    pf_ifname, int(vf_num), vif.address)
 +            except exception.PciDeviceNotFoundById:
-+                # @TODO(hamdyk): set MAC address for non-bifurcated driver.
 +                # could not find net device for the PCI, skipped setting
 +                # MAC address.
 +                pass
