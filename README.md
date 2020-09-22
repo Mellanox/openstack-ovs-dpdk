@@ -12,7 +12,7 @@ This repo has serveral patches that should be applied to the following openstack
 
 ## Apply patches  
 
-After preparing the ovs-dpdk-sriov setup apply the following patches to nova_compute service/contianer on compute nodes:  
+After preparing the ovs-dpdk-sriov setup apply the following patches as described above:  
 
 - nova.patch should be applied to  
     - /usr/lib/python3.6/site-packages/nova/network/os_vif_util.py  
