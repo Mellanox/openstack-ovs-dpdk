@@ -1,10 +1,11 @@
 diff --git a/nova/network/os_vif_util.py b/nova/network/os_vif_util.py
---- a/nova/network/os_vif_util.py       2020-07-30 19:31:09.000000000 +0000
-+++ b/nova/network/os_vif_util.py       2020-08-17 12:05:44.139264681 +0000
-@@ -281,13 +281,19 @@
+index 0bfd87b..f02a1ba 100644
+--- a/nova/network/os_vif_util.py
++++ b/nova/network/os_vif_util.py
+@@ -281,13 +281,19 @@ def _get_vnic_direct_vif_instance(vif, port_profile, plugin, set_bridge=True):
      :returns: an os_vif.objects.vif.VIFHostDevice instance
      """
-
+ 
 +    dev_type = objects.fields.VIFHostDeviceDevType.ETHERNET
 +    if (vif['details'].get(model.VIF_DETAILS_OVS_DATAPATH_TYPE) ==
 +            model.VIF_DETAILS_OVS_DATAPATH_NETDEV
@@ -22,7 +23,7 @@ diff --git a/nova/network/os_vif_util.py b/nova/network/os_vif_util.py
      )
      if set_bridge and vif["network"]["bridge"] is not None:
          obj.network.bridge = vif["network"]["bridge"]
-@@ -308,6 +314,8 @@
+@@ -308,6 +314,8 @@ def _get_ovs_representor_port_profile(vif):
      # during Train.
      return objects.vif.VIFPortProfileOVSRepresentor(
          interface_id=vif.get('ovs_interfaceid') or vif['id'],
@@ -30,11 +31,22 @@ diff --git a/nova/network/os_vif_util.py b/nova/network/os_vif_util.py
 +            model.VIF_DETAILS_OVS_DATAPATH_TYPE),
          representor_name=_get_vif_name(vif),
          representor_address=vif["profile"]['pci_slot'])
-
-diff --git a/nova/virt/libvirt/vif.py a/nova/virt/libvirt/vif.py
---- a/nova/virt/libvirt/vif.py  2020-07-30 19:31:10.000000000 +0000
-+++ b/nova/virt/libvirt/vif.py  2020-08-17 12:04:26.663082525 +0000
-@@ -502,13 +502,10 @@
+ 
+@@ -421,6 +429,9 @@ def _nova_to_osvif_vif_vhostuser(vif):
+         if vif["network"]["bridge"] is not None:
+             obj.bridge_name = vif["network"]["bridge"]
+         _set_vhostuser_settings(vif, obj)
++        vnic_type = vif.get('vnic_type', model.VNIC_TYPE_NORMAL)
++        if vnic_type == model.VNIC_TYPE_VIRTIO_FORWARDER:
++            _set_representor_datapath_offload_settings(vif, obj)
+         return obj
+     elif vif['details'].get(model.VIF_DETAILS_VHOSTUSER_VROUTER_PLUG, False):
+         obj = _get_vif_instance(vif, objects.vif.VIFVHostUser,
+diff --git a/nova/virt/libvirt/vif.py b/nova/virt/libvirt/vif.py
+index 2d01da24..e4a9380 100644
+--- a/nova/virt/libvirt/vif.py
++++ b/nova/virt/libvirt/vif.py
+@@ -502,13 +502,10 @@ class LibvirtGenericVIFDriver(object):
              designer.set_vif_host_backend_hw_veb(
                  conf, 'hostdev', vif.dev_address, None)
          else:
@@ -49,18 +61,18 @@ diff --git a/nova/virt/libvirt/vif.py a/nova/virt/libvirt/vif.py
 +            # conf class is: LibvirtConfigGuestHostdevPCI
 +            designer.set_vif_host_backend_hostdev_pci_config(
 +                conf, vif.dev_address)
-
+ 
      def _set_config_VIFPortProfileOpenVSwitch(self, profile, conf):
          conf.vporttype = "openvswitch"
-@@ -536,13 +533,20 @@
+@@ -536,13 +533,20 @@ class LibvirtGenericVIFDriver(object):
          :param host: nova.virt.libvirt.host.Host
          :param vnic_type: vnic type
-
+ 
 -        :returns: nova.virt.libvirt.config.LibvirtConfigGuestInterface
 +        :returns: nova.virt.libvirt.config.LibvirtConfigGuestInterface or
 +            nova.virt.libvirt.config.LibvirtConfigGuestHostdevPCI
          """
-
+ 
 -        # Do the config that's common to all vif types
 -        conf = self.get_base_config(instance, vif.address, image_meta,
 -                                    inst_type, virt_type, vnic_type,
@@ -75,8 +87,6 @@ diff --git a/nova/virt/libvirt/vif.py a/nova/virt/libvirt/vif.py
 +            conf = self.get_base_config(instance, vif.address, image_meta,
 +                                        inst_type, virt_type, vnic_type,
 +                                        host)
-
+ 
          # Do the VIF type specific config
          if isinstance(vif, osv_vifs.VIFGeneric):
-
-
