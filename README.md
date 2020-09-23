@@ -23,6 +23,7 @@ After preparing the ovs-dpdk-sriov setup apply the following patches as describe
     ```  
 
 - os-vif.patch shoule be applied to the following files  
+    - /usr/lib/python3.6/site-packages/os_vif/utils.py  
     - /usr/lib/python3.6/site-packages/vif_plug_ovs/constants.py  
     - /usr/lib/python3.6/site-packages/vif_plug_ovs/linux_net.py  
     - /usr/lib/python3.6/site-packages/vif_plug_ovs/ovs.py  

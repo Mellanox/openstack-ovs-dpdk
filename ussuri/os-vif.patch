@@ -1,3 +1,32 @@
+diff --git a/os_vif/utils.py b/os_vif/utils.py
+index d74f96b..4df75c2 100644
+--- a/os_vif/utils.py
++++ b/os_vif/utils.py
+@@ -11,6 +11,24 @@
+ #    under the License.
+ 
+ 
++import random
++
++
++def get_random_mac(base_mac):
++    """Get a random MAC address string of the specified base format.
++    The first 3 octets will remain unchanged and the others will be
++    randomly generated.
++
++    :param base_mac: Base MAC address represented by an array of 6 strings/int
++    :returns: The MAC address string.
++    """
++
++    mac = [int(base_mac[0], 16), int(base_mac[1], 16),
++           int(base_mac[2], 16), random.getrandbits(8),
++           random.getrandbits(8), random.getrandbits(8)]
++    return ':'.join(["%02x" % byte for byte in mac])
++
++
+ def set_mask(data, mask):
+     return data | mask
+ 
 diff --git a/vif_plug_ovs/constants.py b/vif_plug_ovs/constants.py
 index 1eece80..c14ba4e 100644
 --- a/vif_plug_ovs/constants.py
@@ -12,7 +41,7 @@ index 1eece80..c14ba4e 100644
  # Neutron dead VLAN.
  DEAD_VLAN = 4095
 diff --git a/vif_plug_ovs/linux_net.py b/vif_plug_ovs/linux_net.py
-index 20baab3..0b9cb60 100644
+index 20baab3..758472a 100644
 --- a/vif_plug_ovs/linux_net.py
 +++ b/vif_plug_ovs/linux_net.py
 @@ -168,6 +168,10 @@ def set_interface_state(interface_name, port_state):
@@ -26,11 +55,62 @@ index 20baab3..0b9cb60 100644
  def _parse_vf_number(phys_port_name):
      """Parses phys_port_name and returns VF number or None.
  
+@@ -217,6 +221,17 @@ def get_function_by_ifname(ifname):
+     return None, False
+ 
+ 
++def get_ifname_by_function(pf_pci):
++    """Get the interface name based on interface function and retruns it"""
++    
++    dev_path = _get_sysfs_netdev_path(pf_pci, False)
++    try:
++        ifname = os.listdir(dev_path)[0]
++        return ifname
++    except OSError:
++        raise
++
++
+ def _get_pf_func(pf_ifname):
+     """Gets PF function number using pf_ifname and returns function
+     number or None.
 diff --git a/vif_plug_ovs/ovs.py b/vif_plug_ovs/ovs.py
-index 9516f79..f6876ab 100644
+index 9516f79..abf7c24 100644
 --- a/vif_plug_ovs/ovs.py
 +++ b/vif_plug_ovs/ovs.py
-@@ -176,20 +176,39 @@ class OvsPlugin(plugin.PluginBase):
+@@ -17,11 +17,13 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
++import re
+ import sys
+ 
+ from os_vif.internal.ip.api import ip as ip_lib
+ from os_vif import objects
+ from os_vif import plugin
++from os_vif import utils as os_vif_utils
+ from oslo_config import cfg
+ 
+ from vif_plug_ovs import constants
+@@ -82,7 +84,17 @@ class OvsPlugin(plugin.PluginBase):
+         cfg.BoolOpt('isolate_vif', default=False,
+                     help='Controls if VIF should be isolated when plugged '
+                     'to the ovs bridge. This should only be set to True '
+-                    'when using the neutron ovs ml2 agent.')
++                    'when using the neutron ovs ml2 agent.'),
++        # We cleanup_base_mac before removing the DPDK representor port from
++        # the integration bridge as it cleans up the mac of the related vf.
++        cfg.StrOpt('cleanup_base_mac',
++                   default='aa:16:3f:00:00:00',
++                   help='The cleanup base MAC address to be used for removed '
++                   'DPDK representor ports. '
++                   'The first 3 octets will remain unchanged and the others '
++                   'will be randomly generated . '
++                   'A valid base MAC must have local assignment bit set and '
++                   'multicast bit cleared in the first octet.')
+     )
+ 
+     def __init__(self, config):
+@@ -176,20 +188,39 @@ class OvsPlugin(plugin.PluginBase):
              return datapath
          return profile.datapath_type
  
@@ -76,7 +156,7 @@ index 9516f79..f6876ab 100644
  
          self._create_vif_port(
              vif, vif_name, instance_info, **args)
-@@ -273,7 +292,18 @@ class OvsPlugin(plugin.PluginBase):
+@@ -273,7 +304,18 @@ class OvsPlugin(plugin.PluginBase):
              kwargs = {'interface_type': constants.OVS_DPDK_INTERFACE_TYPE,
                        'pf_pci': pf_pci,
                        'vf_num': vf_num}
@@ -95,7 +175,7 @@ index 9516f79..f6876ab 100644
  
      def plug(self, vif, instance_info):
          if not hasattr(vif, "port_profile"):
-@@ -299,10 +329,16 @@ class OvsPlugin(plugin.PluginBase):
+@@ -299,10 +341,16 @@ class OvsPlugin(plugin.PluginBase):
              self._plug_vf(vif, instance_info)
  
      def _unplug_vhostuser(self, vif, instance_info):
@@ -116,11 +196,42 @@ index 9516f79..f6876ab 100644
  
      def _unplug_bridge(self, vif, instance_info):
          """UnPlug using hybrid strategy
+@@ -341,6 +389,21 @@ class OvsPlugin(plugin.PluginBase):
+         else:
+             representor = linux_net.get_dpdk_representor_port_name(
+                 vif.id)
++            ovs_port_option = self.ovsdb.get_ovs_port_options(representor)
++            if ovs_port_option.get("dpdk-devargs") and\
++                    "representor" in ovs_port_option.get("dpdk-devargs"):
++                dpdk_devargs = ovs_port_option.get("dpdk-devargs")
++                VF_NUM_RE = re.compile(r"representor=\[(\d+)", re.IGNORECASE)
++                PF_RE = re.compile(r"(\d+\:\d+\:\d+\.\d)", re.IGNORECASE)
++                match = VF_NUM_RE.search(dpdk_devargs)
++                match1 = PF_RE.search(dpdk_devargs)
++                if match and match1:
++                    vf_num = match.group(1)
++                    pf_pci = match1.group(1)
++                    pf_ifname = linux_net.get_ifname_by_function(pf_pci)
++                    linux_net.set_vf_mac_address(pf_ifname, int(vf_num),
++                                                 os_vif_utils.get_random_mac(
++                                                     self.ovsdb.cleanup_base_mac.split(':')))
+ 
+         # The representor interface can't be deleted because it bind the
+         # SR-IOV VF, therefore we just need to remove it from the ovs bridge
 diff --git a/vif_plug_ovs/ovsdb/ovsdb_lib.py b/vif_plug_ovs/ovsdb/ovsdb_lib.py
-index 8f48193..45f0afb 100644
+index 8f48193..c699243 100644
 --- a/vif_plug_ovs/ovsdb/ovsdb_lib.py
 +++ b/vif_plug_ovs/ovsdb/ovsdb_lib.py
-@@ -63,7 +63,8 @@ class BaseOVS(object):
+@@ -29,6 +29,8 @@ class BaseOVS(object):
+         self.connection = config.ovsdb_connection
+         self.interface = config.ovsdb_interface
+         self.ovsdb = ovsdb_api.get_instance(self)
++        self.cleanup_base_mac = config.cleanup_base_mac
++
+ 
+     def _ovs_supports_mtu_requests(self):
+         return self.ovsdb.has_table_column('Interface', 'mtu_request')
+@@ -63,7 +65,8 @@ class BaseOVS(object):
      def create_ovs_vif_port(self, bridge, dev, iface_id, mac, instance_id,
                              mtu=None, interface_type=None,
                              vhost_server_path=None, tag=None,
@@ -130,7 +241,7 @@ index 8f48193..45f0afb 100644
          """Create OVS port
  
          :param bridge: bridge name to create the port on.
-@@ -77,11 +78,17 @@ class BaseOVS(object):
+@@ -77,11 +80,17 @@ class BaseOVS(object):
          :param tag: OVS interface tag.
          :param pf_pci: PCI address of PF for dpdk representor port.
          :param vf_num: VF number of PF for dpdk representor port.
@@ -148,7 +259,7 @@ index 8f48193..45f0afb 100644
          """
          external_ids = {'iface-id': iface_id,
                          'iface-status': 'active',
-@@ -93,12 +100,19 @@ class BaseOVS(object):
+@@ -93,12 +102,19 @@ class BaseOVS(object):
          if vhost_server_path:
              col_values.append(('options',
                                 {'vhost-server-path': vhost_server_path}))
@@ -171,3 +282,13 @@ index 8f48193..45f0afb 100644
          with self.ovsdb.transaction() as txn:
              txn.add(self.ovsdb.add_port(bridge, dev))
              if tag:
+@@ -109,6 +125,9 @@ class BaseOVS(object):
+     def update_ovs_vif_port(self, dev, mtu=None, interface_type=None):
+         self.update_device_mtu(dev, mtu, interface_type=interface_type)
+ 
++    def get_ovs_port_options(self, dev):
++        return self.ovsdb.db_get('Interface', dev, 'options').execute()
++
+     def delete_ovs_vif_port(self, bridge, dev, delete_netdev=True):
+         self.ovsdb.del_port(dev, bridge=bridge, if_exists=True).execute()
+         if delete_netdev:
