@@ -10,3 +10,21 @@
              blacklist=cfg.CONF.OVS_DRIVER.vnic_type_blacklist
          )
          LOG.info("%s's supported_vnic_types: %s",
+--- a/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py   2021-01-24 08:16:36.554585134 +0000
++++ b/neutron/plugins/ml2/drivers/ovn/mech_driver/mech_driver.py   2021-01-24 08:38:47.787057594 +0000
+@@ -821,7 +822,13 @@
+                           'chassis_physnets': chassis_physnets,
+                           'physical_network': physical_network})
+             else:
+-                if (datapath_type == ovn_const.CHASSIS_DATAPATH_NETDEV and
++                vnic_type = context.current.get(portbindings.VNIC_TYPE, portbindings.VNIC_NORMAL)
++                if vnic_type == portbindings.VNIC_DIRECT:
++                    vif_type = portbindings.VIF_TYPE_OVS
++                    vif_details = self.vif_details[vif_type]
++                    vif_details[portbindings.OVS_DATAPATH_TYPE] = ovn_const.CHASSIS_DATAPATH_NETDEV
++
++                elif (datapath_type == ovn_const.CHASSIS_DATAPATH_NETDEV and
+                         ovn_const.CHASSIS_IFACE_DPDKVHOSTUSER in iface_types):
+                     vhost_user_socket = ovn_utils.ovn_vhu_sockpath(
+                         ovn_conf.get_ovn_vhost_sock_dir(), port['id'])
+
